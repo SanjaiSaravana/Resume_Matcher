@@ -1,0 +1,31 @@
+ALEX MORGAN
+Full Stack & Machine Learning Engineer | New York, NY
+Email: alex.morgan@example.com | GitHub: github.com/alexmorgan | LinkedIn: linkedin.com/in/alexmorgan
+
+PROFESSIONAL SUMMARY
+Results-driven Software Engineer with 4+ years of professional experience designing, building, and deploying scalable web applications and data-driven systems. Strong expertise in Python, FastAPI, Docker, and AWS cloud environments. Experienced in developing machine learning pipelines using scikit-learn, pandas, and NumPy. Proficient with SQL databases, Git version control, and modern frontend technologies including JavaScript, HTML, and CSS.
+
+CORE TECHNICAL SKILLS
+- Programming Languages: Python, JavaScript, SQL, HTML, CSS
+- Backend & Frameworks: FastAPI, Flask, Django, RESTful APIs
+- Machine Learning & Data: scikit-learn, pandas, NumPy, Machine Learning algorithms
+- Cloud & DevOps: Docker, AWS (S3, ECS, EC2), Git, CI/CD pipelines
+- Databases: PostgreSQL, MySQL, Redis
+
+PROFESSIONAL EXPERIENCE
+Senior Backend Engineer | DataCloud Solutions (2022 - Present)
+- Architected and deployed microservices using Python and FastAPI handling 10M+ daily API requests.
+- Containerized backend workloads using Docker and orchestrated deployments on AWS ECS, reducing deployment latency by 35%.
+- Implemented automated data preprocessing and feature extraction pipelines with pandas and NumPy.
+- Built tabular classification and clustering prototypes with scikit-learn to detect anomalies in real-time server telemetry.
+- Collaborated with cross-functional product teams using Git, GitHub pull requests, and automated testing suites.
+
+Software Engineer | Apex Systems (2020 - 2022)
+- Developed and maintained responsive full-stack features using Python, Flask, HTML, CSS, and JavaScript.
+- Wrote optimized complex SQL queries and database migrations in PostgreSQL, improving dashboard query speed by 40%.
+- Integrated third-party analytics APIs and secured endpoints with OAuth2 and JWT authentication.
+- Maintained 90%+ unit test coverage with pytest across core business logic modules.
+
+EDUCATION
+Bachelor of Science in Computer Science
+University of Technology (Graduated May 2020)

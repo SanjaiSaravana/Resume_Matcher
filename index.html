@@ -1,0 +1,1417 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Resume–Job Description Matcher | Gradio-Lite</title>
+    <!-- Gradio-Lite: Client-side WebAssembly execution via Pyodide -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.css" />
+    <script type="module" crossorigin src="https://cdn.jsdelivr.net/npm/@gradio/lite/dist/lite.js"></script>
+    <style>
+        html, body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            min-height: 100vh;
+            background-color: #f8fafc;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <gradio-lite theme="light">
+        <gradio-requirements>
+https://files.pythonhosted.org/packages/33/d5/d9e9b75d8dc9cf125fff16fb0cd51d864a29e8b46b6880d8808940989405/huggingface_hub-0.33.5-py3-none-any.whl
+pypdf
+        </gradio-requirements>
+
+        <gradio-file name="matcher.py">
+"""
+matcher.py
+==========
+Machine Learning and Natural Language Processing matching engine for comparing
+resumes with job descriptions.
+
+Key Features:
+- Text normalization and cleaning
+- TF-IDF vectorization with cosine similarity calculation
+- Exact and boundary-aware skill extraction
+- Configurable weighted combination of text similarity and skill coverage
+- Actionable suggestion generation for resume improvement
+"""
+
+from __future__ import annotations
+
+import re
+from typing import Any, Iterable, Sequence
+import numpy as np
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
+
+# Default list of recognized technical skills as required by project specification
+DEFAULT_SKILLS: list[str] = [
+    "Python",
+    "Java",
+    "SQL",
+    "pandas",
+    "NumPy",
+    "Flask",
+    "Django",
+    "React",
+    "JavaScript",
+    "HTML",
+    "CSS",
+    "Docker",
+    "AWS",
+    "Git",
+    "Machine Learning",
+    "scikit-learn",
+    "FastAPI",
+    "Excel",
+    "Power BI",
+]
+
+# Aliases and regex patterns for skill normalization to ensure high precision
+SKILL_PATTERNS: dict[str, str] = {
+    "Python": r"\bpython\b",
+    "Java": r"\bjava\b(?!\s*script)",  # Avoid matching JavaScript as Java
+    "SQL": r"\bsql\b",
+    "pandas": r"\bpandas\b",
+    "NumPy": r"\bnumpy\b",
+    "Flask": r"\bflask\b",
+    "Django": r"\bdjango\b",
+    "React": r"\breact(?:\.js|js)?\b",
+    "JavaScript": r"\b(?:javascript|js)\b",
+    "HTML": r"\bhtml(?:5)?\b",
+    "CSS": r"\bcss(?:3)?\b",
+    "Docker": r"\bdocker\b",
+    "AWS": r"\b(?:aws|amazon web services)\b",
+    "Git": r"\bgit\b(?!\s*(?:hub|lab))|\bgithub\b|\bgitlab\b",
+    "Machine Learning": r"\b(?:machine learning|ml)\b",
+    "scikit-learn": r"\b(?:scikit-learn|sklearn)\b",
+    "FastAPI": r"\bfastapi\b",
+    "Excel": r"\b(?:excel|ms excel|microsoft excel)\b",
+    "Power BI": r"\b(?:power bi|powerbi)\b",
+}
+
+
+def clean_text(text: str) -&gt; str:
+    """
+    Clean and normalize input text:
+    1. Convert to lowercase.
+    2. Replace punctuation with spaces while preserving word boundaries.
+    3. Collapse consecutive whitespaces into a single space.
+    4. Strip leading and trailing whitespace.
+
+    Args:
+        text: Raw text string.
+
+    Returns:
+        Cleaned, normalized text string.
+    """
+    if not isinstance(text, str):
+        return ""
+
+    text = text.lower()
+    # Replace punctuation characters with space, preserving alphanumeric
+    # Keep hyphens between letters for terms like scikit-learn
+    text = re.sub(r"[^a-z0-9\s\-+]", " ", text)
+    # Replace multiple hyphens or isolated hyphens with space
+    text = re.sub(r"(?&lt;![a-z0-9])\-+|\-+(?![a-z0-9])", " ", text)
+    # Collapse multiple whitespaces
+    text = re.sub(r"\s+", " ", text)
+    return text.strip()
+
+
+def calculate_text_similarity(
+    resume_text: str,
+    job_text: str,
+    ngram_range: tuple[int, int] = (1, 1),
+    stop_words: str | list[str] | None = "english",
+) -&gt; float:
+    """
+    Calculate TF-IDF Cosine Similarity between resume text and job description text.
+
+    Args:
+        resume_text: Raw or cleaned resume text.
+        job_text: Raw or cleaned job description text.
+        ngram_range: Lower and upper boundary of n-values for n-grams.
+        stop_words: Stop words list or 'english'.
+
+    Returns:
+        Similarity score as a percentage between 0.0 and 100.0.
+    """
+    cleaned_resume = clean_text(resume_text)
+    cleaned_job = clean_text(job_text)
+
+    # If either text has no content, similarity is 0.0
+    if not cleaned_resume or not cleaned_job:
+        return 0.0
+
+    try:
+        vectorizer = TfidfVectorizer(
+            ngram_range=ngram_range,
+            stop_words=stop_words,
+        )
+        tfidf_matrix = vectorizer.fit_transform([cleaned_resume, cleaned_job])
+
+        # If vectorizer produces an empty vocabulary (e.g., only stop words)
+        if tfidf_matrix.shape[1] == 0:
+            return 0.0
+
+        similarity_matrix = cosine_similarity(tfidf_matrix[0:1], tfidf_matrix[1:2])
+        score = float(similarity_matrix[0][0])
+        # Bound score between 0.0 and 1.0, convert to percentage
+        score = max(0.0, min(1.0, score))
+        return round(score * 100.0, 2)
+    except ValueError:
+        # Occurs if all words are stop words or vocabulary is empty
+        return 0.0
+
+
+def extract_skills(text: str, skill_list: Sequence[str] | None = None) -&gt; set[str]:
+    """
+    Identify which recognized skills appear in the given text.
+    Uses regex patterns for known skills to avoid false positives (e.g., 'Java' in 'JavaScript').
+
+    Args:
+        text: Input text (resume or job description).
+        skill_list: Optional custom list of skill names. If None, defaults to DEFAULT_SKILLS.
+
+    Returns:
+        Set of detected canonical skill names.
+    """
+    if not text or not isinstance(text, str):
+        return set()
+
+    normalized_text = text.lower()
+    target_skills = list(skill_list) if skill_list is not None else DEFAULT_SKILLS
+    found_skills: set[str] = set()
+
+    for skill in target_skills:
+        pattern = SKILL_PATTERNS.get(skill)
+        if pattern:
+            if re.search(pattern, normalized_text, re.IGNORECASE):
+                found_skills.add(skill)
+        else:
+            # Fallback regex with word boundary for skills not in pattern dictionary
+            escaped_skill = re.escape(skill.lower())
+            custom_pattern = rf"\b{escaped_skill}\b"
+            if re.search(custom_pattern, normalized_text, re.IGNORECASE):
+                found_skills.add(skill)
+
+    return found_skills
+
+
+def calculate_skill_coverage(
+    resume_skills: set[str] | Iterable[str],
+    job_skills: set[str] | Iterable[str],
+) -&gt; tuple[float, list[str], list[str]]:
+    """
+    Calculate skill coverage based on the job-description skills present in the resume.
+    Handles division-by-zero safely if no recognized skills are present in the job description.
+
+    Args:
+        resume_skills: Set or list of skills detected in resume.
+        job_skills: Set or list of skills detected in job description.
+
+    Returns:
+        tuple of:
+        - coverage_score (0.0 to 100.0)
+        - matching_skills (sorted list)
+        - missing_skills (sorted list)
+    """
+    r_skills = set(resume_skills)
+    j_skills = set(job_skills)
+
+    matching = sorted(list(j_skills.intersection(r_skills)))
+    missing = sorted(list(j_skills.difference(r_skills)))
+
+    if len(j_skills) == 0:
+        # Zero-division safety: if JD has no recognized skills, coverage is 0.0
+        return 0.0, matching, missing
+
+    coverage = (len(matching) / len(j_skills)) * 100.0
+    return round(coverage, 2), matching, missing
+
+
+def calculate_final_score(
+    text_similarity: float,
+    skill_coverage: float,
+    skill_weight: float = 0.4,
+) -&gt; float:
+    """
+    Combine text similarity and skill coverage into a weighted matching score.
+    Formula:
+        Final Score = (1 - skill_weight) * Text Similarity + skill_weight * Skill Coverage
+
+    Args:
+        text_similarity: Score between 0.0 and 100.0.
+        skill_coverage: Score between 0.0 and 100.0.
+        skill_weight: Float between 0.0 and 1.0 (default 0.4).
+
+    Returns:
+        Final combined score between 0.0 and 100.0.
+
+    Raises:
+        ValueError: If skill_weight is outside [0.0, 1.0].
+    """
+    if not (0.0 &lt;= skill_weight &lt;= 1.0):
+        raise ValueError(
+            f"skill_weight must be between 0.0 and 1.0, got: {skill_weight}"
+        )
+
+    score = ((1.0 - skill_weight) * text_similarity) + (skill_weight * skill_coverage)
+    score = max(0.0, min(100.0, score))
+    return round(score, 2)
+
+
+def generate_suggestions(
+    final_score: float,
+    text_similarity: float,
+    skill_coverage: float,
+    matching_skills: list[str],
+    missing_skills: list[str],
+    resume_skills: list[str] | None = None,
+    job_skills: list[str] | None = None,
+) -&gt; list[str]:
+    """
+    Generate practical recommendations to improve resume alignment with the job description.
+
+    Args:
+        final_score: Overall matching score.
+        text_similarity: TF-IDF similarity score.
+        skill_coverage: Skill coverage score.
+        matching_skills: List of skills found in both.
+        missing_skills: List of skills requested in JD but missing in resume.
+        resume_skills: All skills detected in resume.
+        job_skills: All skills detected in JD.
+
+    Returns:
+        List of actionable suggestion strings.
+    """
+    suggestions: list[str] = []
+
+    # 1. Missing skills advice
+    if missing_skills:
+        missing_formatted = ", ".join(missing_skills)
+        suggestions.append(
+            f"Add Missing Skills: The job description emphasizes {missing_formatted}. "
+            "If you possess hands-on experience or academic projects using these tools, "
+            "explicitly feature them in your Skills and Experience sections."
+        )
+
+    # 2. Skill coverage advice
+    if skill_coverage &lt; 50.0 and job_skills:
+        suggestions.append(
+            "Low Technical Skill Coverage: Your resume covers less than 50% of the recognized technical skills "
+            "demanded by the role. Consider highlighting relevant transferrable technologies or framing past "
+            "responsibilities around the required tools."
+        )
+    elif skill_coverage &gt;= 80.0:
+        suggestions.append(
+            "Strong Skill Match: Your technical skill alignment is solid. Ensure each matching skill "
+            f"({', '.join(matching_skills[:5])}{'...' if len(matching_skills) &gt; 5 else ''}) "
+            "is backed by concrete project outcomes or quantifiable metrics (e.g., 'reduced latency by 25%')."
+        )
+
+    # 3. Text similarity &amp; phrasing advice
+    if text_similarity &lt; 40.0:
+        suggestions.append(
+            "Align Terminology and Keywords: The overall textual similarity is relatively low. "
+            "Mirror the role's language, industry terms, and responsibilities in your bullet points "
+            "to enhance Applicant Tracking System (ATS) readability."
+        )
+    elif text_similarity &gt;= 70.0:
+        suggestions.append(
+            "Good Contextual Alignment: Your resume vocabulary naturally mirrors the job description."
+        )
+
+    # 4. Overall score recommendations
+    if final_score &lt; 40.0:
+        suggestions.append(
+            "Customization Needed: Your resume currently shows low alignment with this specific profile. "
+            "Consider tailoring your summary, project descriptions, and key achievements specifically to this opportunity."
+        )
+    elif final_score &gt;= 75.0:
+        suggestions.append(
+            "High Overall Alignment: Your profile aligns well with this posting. Review formatting, proofread "
+            "for grammar, and ensure your contact details and portfolio links are up to date."
+        )
+
+    # If no recognized skills were detected in the JD
+    if not job_skills:
+        suggestions.append(
+            "General Job Description: The provided job description contains few standard technical keywords. "
+            "Check for domain-specific or niche requirements and weave them into your experience."
+        )
+
+    return suggestions
+
+
+def match_resume_to_job(
+    resume_text: str,
+    job_text: str,
+    skill_weight: float = 0.4,
+    ngram_range: tuple[int, int] = (1, 1),
+    skill_list: Sequence[str] | None = None,
+) -&gt; dict[str, Any]:
+    """
+    Complete end-to-end matching pipeline between a resume and a job description.
+
+    Args:
+        resume_text: Extracted text from resume.
+        job_text: Raw job description text.
+        skill_weight: Importance of skill coverage relative to text similarity (0.0 to 1.0).
+        ngram_range: TF-IDF n-gram range (e.g., (1, 1) or (1, 2)).
+        skill_list: Configurable list of skills to recognize.
+
+    Returns:
+        dict containing:
+        - final_score: float (0.0 - 100.0)
+        - text_similarity: float (0.0 - 100.0)
+        - skill_coverage: float (0.0 - 100.0)
+        - matching_skills: list[str]
+        - missing_skills: list[str]
+        - resume_skills: list[str]
+        - job_skills: list[str]
+        - suggestions: list[str]
+        - disclaimer: str
+    """
+    # Input validation
+    if not isinstance(resume_text, str) or not resume_text.strip():
+        raise ValueError("Resume text is empty or invalid.")
+    if not isinstance(job_text, str) or not job_text.strip():
+        raise ValueError("Job description text is empty or invalid.")
+
+    # 1. Text Similarity
+    text_sim = calculate_text_similarity(
+        resume_text=resume_text,
+        job_text=job_text,
+        ngram_range=ngram_range,
+    )
+
+    # 2. Skill Extraction
+    r_skills = extract_skills(resume_text, skill_list=skill_list)
+    j_skills = extract_skills(job_text, skill_list=skill_list)
+
+    # 3. Skill Coverage
+    skill_cov, matching, missing = calculate_skill_coverage(r_skills, j_skills)
+
+    # 4. Final Score
+    final_score = calculate_final_score(
+        text_similarity=text_sim,
+        skill_coverage=skill_cov,
+        skill_weight=skill_weight,
+    )
+
+    # 5. Suggestions
+    suggestions = generate_suggestions(
+        final_score=final_score,
+        text_similarity=text_sim,
+        skill_coverage=skill_cov,
+        matching_skills=matching,
+        missing_skills=missing,
+        resume_skills=sorted(list(r_skills)),
+        job_skills=sorted(list(j_skills)),
+    )
+
+    return {
+        "final_score": final_score,
+        "text_similarity": text_sim,
+        "skill_coverage": skill_cov,
+        "matching_skills": matching,
+        "missing_skills": missing,
+        "resume_skills": sorted(list(r_skills)),
+        "job_skills": sorted(list(j_skills)),
+        "suggestions": suggestions,
+        "disclaimer": (
+            "This matching score measures textual and skill alignment, "
+            "not the probability of getting hired."
+        ),
+    }
+
+        </gradio-file>
+
+        <gradio-file name="pdf_utils.py">
+"""
+pdf_utils.py
+============
+Robust PDF text extraction utility using PyMuPDF (fitz).
+
+Handles:
+- File paths, byte streams, and file objects
+- Empty PDFs (0 pages)
+- Scanned / image-only PDFs with zero extractable text
+- Corrupted or invalid PDF files
+- Graceful error reporting without crashing the host application
+- Safe cleanup of resources
+"""
+
+from __future__ import annotations
+
+import io
+from pathlib import Path
+from typing import BinaryIO
+try:
+    import pymupdf as fitz
+except ImportError:
+    try:
+        import fitz  # type: ignore
+    except ImportError:
+        fitz = None
+
+try:
+    import pypdf
+except ImportError:
+    pypdf = None
+
+
+class PDFProcessingError(Exception):
+    """Custom exception raised when PDF extraction fails due to formatting or content issues."""
+    pass
+
+
+def _extract_with_pypdf(pdf_source: str | Path | bytes | BinaryIO) -&gt; str:
+    """Extract text using pure-Python pypdf (WASM / browser friendly)."""
+    if pypdf is None:
+        raise PDFProcessingError("pypdf is not available.")
+
+    try:
+        if isinstance(pdf_source, (str, Path)):
+            path_obj = Path(pdf_source)
+            if not path_obj.exists():
+                raise ValueError(f"The specified PDF file was not found: {path_obj.name}")
+            if path_obj.stat().st_size == 0:
+                raise PDFProcessingError("The uploaded PDF file is empty (0 bytes).")
+            reader = pypdf.PdfReader(str(path_obj))
+        elif isinstance(pdf_source, (bytes, bytearray)):
+            if len(pdf_source) == 0:
+                raise PDFProcessingError("The provided byte stream is empty (0 bytes).")
+            reader = pypdf.PdfReader(io.BytesIO(pdf_source))
+        elif hasattr(pdf_source, "read"):
+            data = pdf_source.read()
+            if isinstance(data, str):
+                data = data.encode("utf-8")
+            if len(data) == 0:
+                raise PDFProcessingError("The uploaded file stream is empty (0 bytes).")
+            reader = pypdf.PdfReader(io.BytesIO(data))
+        else:
+            raise ValueError(f"Unsupported PDF input type: {type(pdf_source).__name__}")
+
+        if len(reader.pages) == 0:
+            raise PDFProcessingError("The PDF document contains 0 pages and cannot be processed.")
+
+        extracted_chunks: list[str] = []
+        for page in reader.pages:
+            t = page.extract_text()
+            if t:
+                extracted_chunks.append(t)
+
+        full_text = "\n".join(extracted_chunks).strip()
+        if not full_text:
+            raise PDFProcessingError(
+                "The PDF does not contain extractable text. Scanned or image-only PDFs are not supported without OCR."
+            )
+        return full_text
+    except (ValueError, PDFProcessingError):
+        raise
+    except Exception as exc:
+        raise PDFProcessingError(f"PDF extraction error: {exc}") from exc
+
+
+def extract_text_from_pdf(pdf_source: str | Path | bytes | BinaryIO | None) -&gt; str:
+    """
+    Extract readable text from a PDF source using PyMuPDF or pypdf fallback.
+
+    Args:
+        pdf_source: A path to a PDF file, raw bytes, or an open binary stream.
+
+    Returns:
+        The extracted and stripped plain text.
+
+    Raises:
+        ValueError: If the input is missing, empty, or unreadable.
+        PDFProcessingError: If the PDF is corrupted, password-protected, or has no extractable text.
+    """
+    if pdf_source is None:
+        raise ValueError("No PDF file provided. Please upload a valid PDF document.")
+
+    # 1. Try PyMuPDF if installed
+    if fitz is not None:
+        doc: fitz.Document | None = None
+        extracted_text_chunks: list[str] = []
+
+        try:
+            # Handle file path
+            if isinstance(pdf_source, (str, Path)):
+                path_obj = Path(pdf_source)
+                if not path_obj.exists():
+                    raise ValueError(f"The specified PDF file was not found: {path_obj.name}")
+                if path_obj.stat().st_size == 0:
+                    raise PDFProcessingError(
+                        "The uploaded PDF file is empty (0 bytes). Please upload a valid document."
+                    )
+                doc = fitz.open(str(path_obj))
+
+            # Handle raw bytes
+            elif isinstance(pdf_source, (bytes, bytearray)):
+                if len(pdf_source) == 0:
+                    raise PDFProcessingError("The provided byte stream is empty (0 bytes).")
+                doc = fitz.open(stream=pdf_source, filetype="pdf")
+
+            # Handle file-like objects
+            elif hasattr(pdf_source, "read"):
+                data = pdf_source.read()
+                if isinstance(data, str):
+                    data = data.encode("utf-8")
+                if len(data) == 0:
+                    raise PDFProcessingError("The uploaded file stream is empty (0 bytes).")
+                doc = fitz.open(stream=data, filetype="pdf")
+
+            else:
+                raise ValueError(
+                    f"Unsupported PDF input type: {type(pdf_source).__name__}. "
+                    "Expected file path, bytes, or file stream."
+                )
+
+            # Check page count
+            if doc.page_count == 0:
+                raise PDFProcessingError(
+                    "The PDF document contains 0 pages and cannot be processed."
+                )
+
+            # Extract text page by page
+            for page_idx in range(doc.page_count):
+                page = doc.load_page(page_idx)
+                page_text = page.get_text("text")
+                if page_text:
+                    extracted_text_chunks.append(page_text)
+
+            full_text = "\n".join(extracted_text_chunks).strip()
+
+            # Verify that readable text was actually extracted
+            if not full_text:
+                raise PDFProcessingError(
+                    "The PDF does not contain extractable text. "
+                    "Scanned or image-only PDFs are not supported without OCR."
+                )
+
+            return full_text
+
+        except (ValueError, PDFProcessingError):
+            raise
+        except Exception:
+            # If PyMuPDF fails or errors, try fallback to pypdf if available
+            if pypdf is not None:
+                return _extract_with_pypdf(pdf_source)
+            raise
+        finally:
+            if doc is not None:
+                try:
+                    doc.close()
+                except Exception:
+                    pass
+
+    # 2. Fallback to pure-Python pypdf (WASM / Pyodide)
+    if pypdf is not None:
+        return _extract_with_pypdf(pdf_source)
+
+    raise PDFProcessingError("Neither PyMuPDF nor pypdf is available for PDF processing.")
+
+        </gradio-file>
+
+        <gradio-file name="mlflow_tracking.py">
+"""
+mlflow_tracking.py
+==================
+Reusable live tracking module for the Resume-Job Description Matcher.
+Logs metrics, parameters, and metadata for live Gradio matching calculations
+to the 'Resume-Job-Description-Matcher-Live' MLflow experiment.
+
+Privacy Guarantees:
+- Never logs resume text, candidate names, or contact details.
+- Never logs job description text.
+- Never creates artifacts containing sensitive or PII data.
+- Only logs numerical scores, skill counts, configuration, and execution metadata.
+"""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+import math
+import os
+from pathlib import Path
+from typing import Any
+
+# Ensure MLflow file store flags are active
+os.environ["MLFLOW_ALLOW_FILE_STORE"] = "true"
+os.environ["MLFLOW_DISABLE_AGENT_HINT"] = "1"
+
+try:
+    import mlflow
+except ImportError:
+    mlflow = None
+
+LIVE_EXPERIMENT_NAME = "Resume-Job-Description-Matcher-Live"
+DEFAULT_TRACKING_DIR = Path(__file__).resolve().parent / "mlruns"
+APP_VERSION = "1.0.0"
+
+
+def get_tracking_uri() -&gt; str:
+    """
+    Resolve the MLflow tracking URI.
+    Uses MLFLOW_TRACKING_URI environment variable if set, otherwise defaults
+    to the local project 'mlruns' directory.
+    """
+    env_uri = os.environ.get("MLFLOW_TRACKING_URI")
+    if env_uri and env_uri.strip():
+        return env_uri.strip()
+    return DEFAULT_TRACKING_DIR.as_uri()
+
+
+def log_live_match(
+    results: dict[str, Any],
+    skill_weight: float = 0.4,
+    ngram_range: tuple[int, int] = (1, 2),
+    tracking_uri: str | None = None,
+    experiment_name: str = LIVE_EXPERIMENT_NAME,
+) -&gt; str | None:
+    """
+    Log non-sensitive results and configuration of a successful matching calculation
+    as an individual MLflow run.
+
+    Args:
+        results: Dictionary returned by match_resume_to_job containing final_score,
+                 text_similarity, skill_coverage, matching_skills, missing_skills,
+                 resume_skills, job_skills.
+        skill_weight: The weighting factor applied between text similarity and skill coverage.
+        ngram_range: The TF-IDF n-gram range used.
+        tracking_uri: Optional override for tracking URI (defaults to get_tracking_uri()).
+        experiment_name: Experiment name (defaults to LIVE_EXPERIMENT_NAME).
+
+    Returns:
+        The actual MLflow run ID string if tracking succeeded, or None if tracking failed.
+    """
+    if mlflow is None or not isinstance(results, dict):
+        return None
+
+    # Resolve tracking URI and configure MLflow
+    target_uri = tracking_uri or get_tracking_uri()
+
+    try:
+        mlflow.set_tracking_uri(target_uri)
+        mlflow.set_experiment(experiment_name)
+    except Exception as exc:
+        print(f"[MLflow Tracking Warning] Failed to configure tracking URI/experiment: {exc}")
+        return None
+
+    # Safely close any active run from previous interruptions in the current thread/process
+    try:
+        if mlflow.active_run() is not None:
+            mlflow.end_run()
+    except Exception:
+        pass
+
+    run_id: str | None = None
+
+    try:
+        with mlflow.start_run(run_name="live_match_prediction") as run:
+            run_id = run.info.run_id
+
+            # 1. Log Non-Sensitive Parameters
+            params = {
+                "matching_algorithm": "TF-IDF + Cosine Similarity &amp; Weighted Skill Extraction",
+                "ngram_range": str(ngram_range),
+                "skill_weight": float(skill_weight),
+                "pdf_parser": "PyMuPDF (fitz)",
+                "app_version": APP_VERSION,
+                "input_processing": "lowercase=True, clean_punctuation=True, stop_words=english",
+                "scoring_formula": "(1 - skill_weight) * text_similarity + skill_weight * skill_coverage",
+            }
+            for param_key, param_val in params.items():
+                mlflow.log_param(param_key, param_val)
+
+            # 2. Extract and Validate Numerical Metrics
+            raw_metrics = {
+                "final_matching_score": results.get("final_score"),
+                "text_similarity_score": results.get("text_similarity"),
+                "skill_coverage_score": results.get("skill_coverage"),
+                "matched_skill_count": len(results.get("matching_skills", [])),
+                "missing_skill_count": len(results.get("missing_skills", [])),
+                "job_description_skill_count": len(results.get("job_skills", [])),
+                "resume_skill_count": len(results.get("resume_skills", [])),
+            }
+
+            # Filter out non-finite (NaN, inf) values safely
+            valid_metrics = {}
+            for metric_key, metric_val in raw_metrics.items():
+                if metric_val is not None:
+                    try:
+                        num_val = float(metric_val)
+                        if math.isfinite(num_val):
+                            valid_metrics[metric_key] = num_val
+                    except (ValueError, TypeError):
+                        pass
+
+            for metric_key, metric_val in valid_metrics.items():
+                mlflow.log_metric(metric_key, metric_val)
+
+            # 3. Log Safe Metadata Tags
+            tags = {
+                "source": "gradio_app",
+                "run_type": "live_prediction",
+                "application": "resume_job_matcher",
+                "calculation_timestamp": datetime.now(timezone.utc).isoformat(),
+            }
+            for tag_key, tag_val in tags.items():
+                mlflow.set_tag(tag_key, tag_val)
+
+            return run_id
+
+    except Exception as exc:
+        print(f"[MLflow Tracking Warning] Failed to log live run: {exc}")
+        return None
+    finally:
+        # Guarantee run termination even if unexpected exceptions arise
+        try:
+            if mlflow.active_run() is not None:
+                mlflow.end_run()
+        except Exception:
+            pass
+
+        </gradio-file>
+
+        <gradio-file name="app.py" entrypoint>
+"""
+app.py
+======
+Resume–Job Description Matcher
+Interactive Web Application built with Gradio and scikit-learn.
+
+Deployable on Hugging Face Spaces using the Gradio SDK.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Any
+import gradio as gr
+
+from matcher import match_resume_to_job
+from mlflow_tracking import log_live_match
+from pdf_utils import PDFProcessingError, extract_text_from_pdf
+
+import base64
+
+BASE_DIR = Path(__file__).resolve().parent
+SAMPLE_RESUME_TXT = BASE_DIR / "sample_data" / "sample_resume.txt"
+SAMPLE_JOB_TXT = BASE_DIR / "sample_data" / "sample_job.txt"
+SAMPLE_RESUME_PDF = BASE_DIR / "sample_data" / "sample_resume.pdf"
+
+DEFAULT_SAMPLE_JOB = """Role: Senior Python &amp; Machine Learning Engineer
+Location: Remote (US) / New York, NY
+Company: InnovateTech AI Solutions
+
+About the Role:
+We are seeking a talented Senior Python Engineer with a strong interest in Machine Learning to join our core intelligence team. In this role, you will architect resilient backend services, productionize machine learning workflows, and collaborate on cloud-native deployments.
+
+Key Responsibilities:
+- Design, build, and optimize scalable RESTful backend services using Python and FastAPI.
+- Develop predictive and machine learning pipelines using scikit-learn, pandas, and NumPy.
+- Containerize services with Docker and manage automated deployments on AWS.
+- Design relational schemas and optimize database performance using SQL (PostgreSQL).
+- Collaborate with frontend and mobile teams, practicing code reviews and Git version control.
+- Ensure high test coverage and reliability with automated testing suites.
+
+Required Qualifications &amp; Skills:
+- 3+ years of professional experience with Python software engineering.
+- Hands-on experience building backend APIs with FastAPI, Flask, or Django.
+- Proficiency in data manipulation and model building with pandas, NumPy, and scikit-learn.
+- Strong knowledge of Machine Learning concepts and algorithmic problem solving.
+- Practical experience with Docker containerization and AWS cloud services.
+- Solid understanding of SQL database querying and optimization.
+- Familiarity with version control using Git.
+
+Preferred Qualifications:
+- Experience with frontend technologies such as React or JavaScript.
+- Familiarity with data visualization tools such as Power BI or Excel dashboards.
+- Bachelor's degree in Computer Science, Engineering, or equivalent practical experience.
+"""
+
+SAMPLE_RESUME_B64 = (
+    "JVBERi0xLjcKJcK1wrYKJSBXcml0dGVuIGJ5IE11UERGIDEuMjguMgoKMSAwIG9iago8PC9UeXBlL0NhdGFsb2cvUGFnZXMgMiAwIFIv"
+    "SW5mbzw8L1Byb2R1Y2VyKE11UERGIDEuMjguMik+Pj4+CmVuZG9iagoKMiAwIG9iago8PC9UeXBlL1BhZ2VzL0NvdW50IDEvS2lkc1s0"
+    "IDAgUl0+PgplbmRvYmoKCjMgMCBvYmoKPDwvRm9udDw8L2hlbHYgNSAwIFI+Pj4+CmVuZG9iagoKNCAwIG9iago8PC9UeXBlL1BhZ2Uv"
+    "TWVkaWFCb3hbMCAwIDU5NSA4NDJdL1JvdGF0ZSAwL1Jlc291cmNlcyAzIDAgUi9QYXJlbnQgMiAwIFIvQ29udGVudHNbNiAwIFJdPj4K"
+    "ZW5kb2JqCgo1IDAgb2JqCjw8L1R5cGUvRm9udC9TdWJ0eXBlL1R5cGUxL0Jhc2VGb250L0hlbHZldGljYS9FbmNvZGluZy9XaW5BbnNp"
+    "RW5jb2Rpbmc+PgplbmRvYmoKCjYgMCBvYmoKPDwvTGVuZ3RoIDE0ODUvRmlsdGVyL0ZsYXRlRGVjb2RlPj4Kc3RyZWFtCnjalVe7ruU2"
+    "DOzPV5w6QDayREkWEKQIkiZdgNMFKe71AymSYpv9/gyHki0/brKLxT1ry3qQw+GQenx+/Px6DE+Hf8Mzumce/fP1z+OHv5a/vzzLp/h8"
+    "rc8/fpRBJolx9E5mWaOXjJHlpz9fvz3c8/shfHIxPF+/PDAz5ZimNHmMZElDCundO590Jd/GVNKSIt6nFNOQPd50JGMk6v/2PcXsvcvY"
+    "R/CW8TWWtGL2u+dYLDz99Z1aF5PuXdIU3rzDE3aGHwtGdUXGyCJOx/A0Z6ff8TWkNc31DJyaRUbY7rkH3xPft5lr27nft66faPU77BbB"
+    "E/foxvSp20ffbnfbfdqfogPeqyTgH2KQgudF46EIx4h4zDJE3+MRPfYNGocsOfg5CfYvOcGSRVfBioQvmejHW9yr/94F8YhfLhYr7OZ0"
+    "NUYc1uKJJwWsXbF60LirT1l/caaeCK9xBjCInJe3eOtcDysRN0OojgGHJHWForji9MoQ7BCI25A8o6iWaoywChYZ5piRxSyivft+Oj6c"
+    "8YD9JStXwSLMX4y59I5n7v7ortm8KUQSuChKOpOsTDgBaxEPJ4Ujgm9BOQBUO98wI0e1LdC/SPtgDWwq9eSZ72IWyQ2mXEM7iJR6o3u5"
+    "hlU65Vu65JvO1V0rU6OilS1KO9oF1sNLoLatV09y9UU9Pni2wJtZkfGGkLGkcCd61LMLDCaTW2wQ1UERtj0tKzE/Ef3KMqK2Ehvdezpw"
+    "BrlENDznJcOSseV3Pikmi67En7KeftNnRCPHjYtO3mANYoqMCWQM1tOuMQqy7nCyBM1Of5vBEqiZiAHWRbyNyOCC/2sWyzveJpli2Nf4"
+    "eUMP4qe6hX/NromnZtg6wAPYr3pzYeMH1lfMT36Y/cfzxZt+N/So4qlaA002PbbTb7ifNE9zqIot6c2sTiut8NQzTFKdYkZgXT5b8L81"
+    "gzZV9qgd38LZjqvT15xF5TGvDen5Ym+Xz9UyZKYgKytKJz1oOuDHGILZFDUS7Sl4X7pMYJyA7opfucvfkzWXrDKewELVO+VV7Ngw57K/"
+    "aQ1J1Ltvq0naJUT99RiNGA0Su3WBXGIlv/Lrg/pfveixZQ1DrvY678fgg8Mf1m3Zo2pmqlNO2GhkGW3TBP7KB9UnVm0pzKSVWPpsqnZR"
+    "zUMe7vpwzA+XxsrFqa0LQ0AMtNoqQ7UqgpeuzacvQ46st6wKF+aZ0g2VC8rRt2r5CeeWuVTAIcnZgwNLd0TWiphZ4BmVeMFqr1vOEGgc"
+    "35mdya0c03bi3Q6sWEPV7qBYoFvALxIF7c7F/9I6u7a+xZMsWbUadvZaJ2BdTKy9TNh6mZbt5neiDsBe65bYD9B/sqbWpNtautW5g/Lc"
+    "1sqz8lpflK1mDeyTFA1fe4ahWpqO/U5nNWuZ9TXsGmrFJ39F/zLtPdn5kXqqFWuNU82XehaRpddbHa0R1m5wpmUzO7WWNZbZQqwYLUXz"
+    "BgPmeO311p5vu70tH9nlaiVZ9phYN1pjS7bl1gEM7PSOnN8VtrsLcH29z1wysO87blhG5M2a2k1pTG30vk/4qs6cVYORY/906F13DXSm"
+    "gZsilktl6DvGo/LZXarTEnpjdwpnamvdMzssQ2fO3W3vmDH/qY/XPuHSkxy6rLue5sQbvSyS45Ga5SoDdzXkLcy0Inc9aI2t35h8uje0"
+    "KlorQa6M3O8Z9U5wX10T9YmWpU71dMdR+c2Iy26FKh3xjk3DqX2CyN5pn+ldPmSJsLrpruqt3t6EKjpYbjAKWtHC3n3tXrNuBotgu50g"
+    "ijT+pen7noeo/5YBY/B9tKD8e3aMVZePirXcdHwX9oVCv/Umyv4hd/llETVdsX74qLy5dDOHTjFsnWm63xga67d2OwjtVkGmf5i7oq29"
+    "9vYDHtgPdd987Swt33y7Q8fQbkWpu1VK5ScxY84f53V6YVhst6MaX9v7ctPRb34Uu02oNxtTFHOyq2mHqcWvr8fvj38BmdEkQAplbmRz"
+    "dHJlYW0KZW5kb2JqCgp4cmVmCjAgNwowMDAwMDAwMDAwIDY1NTM1IGYgCjAwMDAwMDAwNDIgMDAwMDAgbiAKMDAwMDAwMDEyMCAwMDAw"
+    "MCBuIAowMDAwMDAwMTcyIDAwMDAwIG4gCjAwMDAwMDAyMTMgMDAwMDAgbiAKMDAwMDAwMDMyMCAwMDAwMCBuIAowMDAwMDAwNDA5IDAw"
+    "MDAwIG4gCgp0cmFpbGVyCjw8L1NpemUgNy9Sb290IDEgMCBSL0lEWzwzNzU1N0JDMkFFMjlDMzk3QzNBQUMyOUJDMkEzQzNBOT48OEM1"
+    "Njc5NzJFQkRFRUFBQTYzRjIyQkQxMUNFRTZDRUI+XT4+CnN0YXJ0eHJlZgoxOTY0CiUlRU9GCg=="
+)
+
+
+def load_sample_content() -&gt; tuple[str | None, str]:
+    """Load default sample resume PDF path and sample job description text."""
+    if SAMPLE_RESUME_PDF.exists():
+        pdf_path = str(SAMPLE_RESUME_PDF)
+    else:
+        # Fallback for Gradio-Lite / WebAssembly environments
+        temp_dir = Path("/tmp") if Path("/tmp").exists() else BASE_DIR / "sample_data"
+        temp_dir.mkdir(parents=True, exist_ok=True)
+        sample_pdf_file = temp_dir / "sample_resume.pdf"
+        try:
+            if not sample_pdf_file.exists():
+                sample_pdf_file.write_bytes(base64.b64decode(SAMPLE_RESUME_B64))
+            pdf_path = str(sample_pdf_file)
+        except Exception:
+            pdf_path = None
+
+    if SAMPLE_JOB_TXT.exists():
+        job_text = SAMPLE_JOB_TXT.read_text(encoding="utf-8")
+    else:
+        job_text = DEFAULT_SAMPLE_JOB
+
+    return pdf_path, job_text
+
+
+def compute_match(
+    resume_file: Any,
+    job_description: str,
+    skill_weight: float = 0.4,
+) -&gt; tuple[
+    str,  # Score Display (HTML)
+    float,  # Text Similarity Progress/Gauge
+    float,  # Skill Coverage Progress/Gauge
+    str,  # Matching Skills badges (HTML)
+    str,  # Missing Skills badges (HTML)
+    str,  # Suggestions (Markdown)
+    str,  # Status/Error banner (HTML)
+]:
+    """
+    Process uploaded resume and job description, calculate similarity,
+    and return formatted presentation components for the UI.
+    """
+    empty_result = (
+        '&lt;div class="score-card empty"&gt;&lt;h2&gt;--&lt;/h2&gt;&lt;span&gt;Match Score&lt;/span&gt;&lt;/div&gt;',
+        0.0,
+        0.0,
+        '&lt;p class="empty-hint"&gt;No matching skills detected&lt;/p&gt;',
+        '&lt;p class="empty-hint"&gt;No missing skills detected&lt;/p&gt;',
+        "Submit a resume and job description to view actionable suggestions.",
+        "",
+    )
+
+    # 1. Validate inputs
+    if resume_file is None:
+        error_html = (
+            '&lt;div class="alert-box error"&gt;'
+            '&lt;strong&gt;⚠️ Missing Resume:&lt;/strong&gt; Please upload a PDF resume before calculating match.'
+            '&lt;/div&gt;'
+        )
+        return (
+            empty_result[0],
+            0.0,
+            0.0,
+            empty_result[3],
+            empty_result[4],
+            empty_result[5],
+            error_html,
+        )
+
+    if not job_description or not job_description.strip():
+        error_html = (
+            '&lt;div class="alert-box error"&gt;'
+            '&lt;strong&gt;⚠️ Missing Job Description:&lt;/strong&gt; Please paste the target job description text.'
+            '&lt;/div&gt;'
+        )
+        return (
+            empty_result[0],
+            0.0,
+            0.0,
+            empty_result[3],
+            empty_result[4],
+            empty_result[5],
+            error_html,
+        )
+
+    # 2. Extract PDF text
+    try:
+        # Gradio gr.File may return a str path or an object with a .name attribute
+        file_path = getattr(resume_file, "name", resume_file)
+        resume_text = extract_text_from_pdf(file_path)
+    except PDFProcessingError as err:
+        error_html = f'&lt;div class="alert-box error"&gt;&lt;strong&gt;📄 PDF Processing Error:&lt;/strong&gt; {err}&lt;/div&gt;'
+        return (
+            empty_result[0],
+            0.0,
+            0.0,
+            empty_result[3],
+            empty_result[4],
+            empty_result[5],
+            error_html,
+        )
+    except ValueError as err:
+        error_html = f'&lt;div class="alert-box error"&gt;&lt;strong&gt;⚠️ Input Validation Error:&lt;/strong&gt; {err}&lt;/div&gt;'
+        return (
+            empty_result[0],
+            0.0,
+            0.0,
+            empty_result[3],
+            empty_result[4],
+            empty_result[5],
+            error_html,
+        )
+    except Exception as err:
+        error_html = f'&lt;div class="alert-box error"&gt;&lt;strong&gt;❌ Unexpected Error:&lt;/strong&gt; {err}&lt;/div&gt;'
+        return (
+            empty_result[0],
+            0.0,
+            0.0,
+            empty_result[3],
+            empty_result[4],
+            empty_result[5],
+            error_html,
+        )
+
+    # 3. Calculate match
+    try:
+        # Constrain skill_weight safely between 0.0 and 1.0
+        weight = float(max(0.0, min(1.0, skill_weight)))
+        results = match_resume_to_job(
+            resume_text=resume_text,
+            job_text=job_description,
+            skill_weight=weight,
+            ngram_range=(1, 2),
+        )
+    except Exception as err:
+        error_html = f'&lt;div class="alert-box error"&gt;&lt;strong&gt;⚙️ Matching Engine Error:&lt;/strong&gt; {err}&lt;/div&gt;'
+        return (
+            empty_result[0],
+            0.0,
+            0.0,
+            empty_result[3],
+            empty_result[4],
+            empty_result[5],
+            error_html,
+        )
+
+    final_score = results["final_score"]
+    text_sim = results["text_similarity"]
+    skill_cov = results["skill_coverage"]
+    matching_skills = results["matching_skills"]
+    missing_skills = results["missing_skills"]
+    suggestions = results["suggestions"]
+
+    # 4. Determine score badge color scheme
+    if final_score &gt;= 75.0:
+        color_class = "score-high"
+        verdict = "Strong Alignment"
+    elif final_score &gt;= 50.0:
+        color_class = "score-mid"
+        verdict = "Moderate Alignment"
+    else:
+        color_class = "score-low"
+        verdict = "Low Alignment"
+
+    score_html = f"""
+    &lt;div class="score-card {color_class}"&gt;
+        &lt;div class="score-number"&gt;{final_score:.1f}%&lt;/div&gt;
+        &lt;div class="score-label"&gt;{verdict}&lt;/div&gt;
+        &lt;div class="score-subtext"&gt;Weighted Blend: {int((1-weight)*100)}% TF-IDF &amp; {int(weight*100)}% Skills&lt;/div&gt;
+    &lt;/div&gt;
+    """
+
+    # 5. Format skill badges
+    if matching_skills:
+        matching_badges = "".join([f'&lt;span class="badge badge-match"&gt;✓ {s}&lt;/span&gt;' for s in matching_skills])
+        matching_html = f'&lt;div class="badge-container"&gt;{matching_badges}&lt;/div&gt;'
+    else:
+        matching_html = '&lt;p class="empty-hint"&gt;None of the recognized skills were matched.&lt;/p&gt;'
+
+    if missing_skills:
+        missing_badges = "".join([f'&lt;span class="badge badge-missing"&gt;✗ {s}&lt;/span&gt;' for s in missing_skills])
+        missing_html = f'&lt;div class="badge-container"&gt;{missing_badges}&lt;/div&gt;'
+    else:
+        missing_html = '&lt;p class="empty-hint success-text"&gt;No missing skills! Resume covers all recognized skills from the job description.&lt;/p&gt;'
+
+    # 6. Format suggestions
+    if suggestions:
+        suggestions_md = "\n\n".join([f"- **{i+1}.** {sug}" for i, sug in enumerate(suggestions)])
+    else:
+        suggestions_md = "Great match! No immediate keyword improvements detected."
+
+    # 7. MLflow Live Tracking (Privacy-Preserving)
+    run_id = log_live_match(
+        results=results,
+        skill_weight=weight,
+        ngram_range=(1, 2),
+    )
+
+    if run_id:
+        tracking_status_html = (
+            f'&lt;div class="tracking-badge tracking-success"&gt;'
+            f'📊 &lt;strong&gt;MLflow tracking:&lt;/strong&gt; Successful &amp;nbsp;|&amp;nbsp; '
+            f'&lt;strong&gt;Run ID:&lt;/strong&gt; &lt;code&gt;{run_id}&lt;/code&gt;'
+            f'&lt;/div&gt;'
+        )
+    else:
+        tracking_status_html = (
+            '&lt;div class="tracking-badge tracking-warning"&gt;'
+            '⚠️ &lt;strong&gt;MLflow tracking:&lt;/strong&gt; Unavailable — matching results were calculated, '
+            'but the run could not be recorded.'
+            '&lt;/div&gt;'
+        )
+
+    success_banner = (
+        '&lt;div class="alert-box success"&gt;'
+        '&lt;strong&gt;✅ Analysis Completed:&lt;/strong&gt; Resume parsed successfully and alignment metrics computed.'
+        f'{tracking_status_html}'
+        '&lt;/div&gt;'
+    )
+
+    return (
+        score_html,
+        text_sim,
+        skill_cov,
+        matching_html,
+        missing_html,
+        suggestions_md,
+        success_banner,
+    )
+
+
+# Custom CSS styling for a clean, professional aesthetic
+CUSTOM_CSS = """
+.container {
+    max-width: 1200px;
+    margin: 0 auto;
+}
+.header-box {
+    text-align: center;
+    padding: 1.5rem 1rem 0.5rem;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+}
+.header-title {
+    font-size: 2.2rem;
+    font-weight: 800;
+    margin-bottom: 0.25rem;
+    background: linear-gradient(135deg, #2563eb, #7c3aed);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+}
+.header-subtitle {
+    font-size: 1.05rem;
+    color: #4b5563;
+    margin-bottom: 0.75rem;
+}
+.disclaimer-banner {
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    color: #166534;
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    margin-bottom: 1.25rem;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+.score-card {
+    text-align: center;
+    padding: 1.5rem 1rem;
+    border-radius: 12px;
+    margin-bottom: 1rem;
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+}
+.score-high {
+    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+    color: white;
+}
+.score-mid {
+    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
+    color: white;
+}
+.score-low {
+    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
+    color: white;
+}
+.score-card.empty {
+    background: #f3f4f6;
+    color: #6b7280;
+}
+.score-number {
+    font-size: 3.5rem;
+    font-weight: 800;
+    line-height: 1;
+}
+.score-label {
+    font-size: 1.2rem;
+    font-weight: 600;
+    margin-top: 0.5rem;
+}
+.score-subtext {
+    font-size: 0.85rem;
+    opacity: 0.9;
+    margin-top: 0.25rem;
+}
+.badge-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    padding: 0.5rem 0;
+}
+.badge {
+    display: inline-block;
+    padding: 0.35rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.85rem;
+    font-weight: 600;
+}
+.badge-match {
+    background-color: #d1fae5;
+    color: #065f46;
+    border: 1px solid #a7f3d0;
+}
+.badge-missing {
+    background-color: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fecaca;
+}
+.empty-hint {
+    color: #6b7280;
+    font-style: italic;
+    font-size: 0.9rem;
+    margin: 0.5rem 0;
+}
+.success-text {
+    color: #059669;
+    font-weight: 500;
+}
+.alert-box {
+    padding: 0.75rem 1rem;
+    border-radius: 8px;
+    font-size: 0.9rem;
+    margin-bottom: 0.75rem;
+}
+.alert-box.error {
+    background: #fef2f2;
+    border: 1px solid #fca5a5;
+    color: #991b1b;
+}
+.alert-box.success {
+    background: #f0fdf4;
+    border: 1px solid #86efac;
+    color: #166534;
+}
+.tracking-badge {
+    margin-top: 0.5rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: 6px;
+    font-size: 0.85rem;
+    display: inline-block;
+}
+.tracking-success {
+    background: #ecfdf5;
+    border: 1px solid #a7f3d0;
+    color: #065f46;
+}
+.tracking-warning {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    color: #92400e;
+}
+.tracking-badge code {
+    background: rgba(0, 0, 0, 0.05);
+    padding: 0.1rem 0.3rem;
+    border-radius: 4px;
+    font-family: monospace;
+}
+"""
+
+
+def build_app() -&gt; gr.Blocks:
+    """Build and configure the Gradio interface."""
+    with gr.Blocks(title="Resume - Job Description Matcher") as demo:
+        with gr.Column(elem_classes=["container"]):
+            # Include custom CSS directly for full compatibility across Gradio versions
+            gr.HTML(f"&lt;style&gt;{CUSTOM_CSS}&lt;/style&gt;")
+
+            # Header
+            gr.HTML(
+                """
+                &lt;div class="header-box"&gt;
+                    &lt;div class="header-title"&gt;📄 Resume–Job Description Matcher&lt;/div&gt;
+                    &lt;div class="header-subtitle"&gt;
+                        Machine Learning &amp; Natural Language Processing Alignment Engine
+                    &lt;/div&gt;
+                &lt;/div&gt;
+                """
+            )
+
+            # Disclaimer banner
+            gr.HTML(
+                """
+                &lt;div class="disclaimer-banner"&gt;
+                    &lt;span&gt;💡&lt;/span&gt;
+                    &lt;span&gt;
+                        &lt;strong&gt;Note on Methodology:&lt;/strong&gt; The matching score evaluates textual and technical skill alignment
+                        using TF-IDF vectorization and cosine similarity. It measures keyword and vocabulary correspondence,
+                        &lt;strong&gt;not the probability of getting hired&lt;/strong&gt;.
+                    &lt;/span&gt;
+                &lt;/div&gt;
+                """
+            )
+
+            # Status Banner
+            status_banner = gr.HTML("", visible=True)
+
+            with gr.Row():
+                # Left Column: Inputs
+                with gr.Column(scale=5):
+                    gr.Markdown("### 1. Upload &amp; Job Description")
+                    resume_input = gr.File(
+                        label="Upload Resume (PDF)",
+                        file_types=[".pdf"],
+                        type="filepath",
+                    )
+                    job_input = gr.Textbox(
+                        label="Job Description",
+                        placeholder="Paste the target job description here...",
+                        lines=10,
+                    )
+
+                    with gr.Accordion("⚙️ Advanced Settings (Skill Weight)", open=False):
+                        skill_weight_slider = gr.Slider(
+                            minimum=0.0,
+                            maximum=1.0,
+                            value=0.4,
+                            step=0.05,
+                            label="Skill Weight Factor",
+                            info="0.0 = Pure TF-IDF Text Similarity | 1.0 = Pure Skill Coverage (Default: 0.4)",
+                        )
+
+                    with gr.Row():
+                        calculate_btn = gr.Button("🔍 Calculate Match", variant="primary", scale=2)
+                        load_sample_btn = gr.Button("📋 Load Example", variant="secondary", scale=1)
+                        clear_btn = gr.Button("🔄 Clear", variant="stop", scale=1)
+
+                # Right Column: Results
+                with gr.Column(scale=5):
+                    gr.Markdown("### 2. Match Analysis &amp; Score")
+                    score_display = gr.HTML(
+                        '&lt;div class="score-card empty"&gt;&lt;h2&gt;--&lt;/h2&gt;&lt;span&gt;Upload a resume and job description&lt;/span&gt;&lt;/div&gt;'
+                    )
+
+                    with gr.Row():
+                        text_sim_gauge = gr.Number(
+                            label="Text Similarity Score (%)",
+                            value=0.0,
+                            precision=2,
+                        )
+                        skill_cov_gauge = gr.Number(
+                            label="Skill Coverage Score (%)",
+                            value=0.0,
+                            precision=2,
+                        )
+
+                    with gr.Row():
+                        with gr.Column():
+                            gr.Markdown("#### Matching Skills Found")
+                            matching_skills_output = gr.HTML('&lt;p class="empty-hint"&gt;Awaiting submission...&lt;/p&gt;')
+                        with gr.Column():
+                            gr.Markdown("#### Missing Skills")
+                            missing_skills_output = gr.HTML('&lt;p class="empty-hint"&gt;Awaiting submission...&lt;/p&gt;')
+
+                    gr.Markdown("### 3. Actionable Suggestions")
+                    suggestions_output = gr.Markdown(
+                        "Submit a resume and job description to view actionable suggestions."
+                    )
+
+            # Event Handlers
+            calculate_btn.click(
+                fn=compute_match,
+                inputs=[resume_input, job_input, skill_weight_slider],
+                outputs=[
+                    score_display,
+                    text_sim_gauge,
+                    skill_cov_gauge,
+                    matching_skills_output,
+                    missing_skills_output,
+                    suggestions_output,
+                    status_banner,
+                ],
+            )
+
+            load_sample_btn.click(
+                fn=load_sample_content,
+                inputs=[],
+                outputs=[resume_input, job_input],
+            )
+
+            clear_btn.click(
+                fn=lambda: (
+                    None,
+                    "",
+                    0.4,
+                    '&lt;div class="score-card empty"&gt;&lt;h2&gt;--&lt;/h2&gt;&lt;span&gt;Upload a resume and job description&lt;/span&gt;&lt;/div&gt;',
+                    0.0,
+                    0.0,
+                    '&lt;p class="empty-hint"&gt;Awaiting submission...&lt;/p&gt;',
+                    '&lt;p class="empty-hint"&gt;Awaiting submission...&lt;/p&gt;',
+                    "Submit a resume and job description to view actionable suggestions.",
+                    "",
+                ),
+                inputs=[],
+                outputs=[
+                    resume_input,
+                    job_input,
+                    skill_weight_slider,
+                    score_display,
+                    text_sim_gauge,
+                    skill_cov_gauge,
+                    matching_skills_output,
+                    missing_skills_output,
+                    suggestions_output,
+                    status_banner,
+                ],
+            )
+
+    return demo
+
+
+# Create app instance for Gradio / Hugging Face Spaces
+app = build_app()
+
+try:
+    app.launch()
+except Exception:
+    pass
+
+        </gradio-file>
+    </gradio-lite>
+</body>
+</html>

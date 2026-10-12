@@ -1,0 +1,13 @@
+pair_id,role_category,expected_score,predicted_score,error,absolute_error,text_similarity,skill_coverage,matching_skills,missing_skills
+1,Python Backend High Match,88.0,57.81,-30.19,30.19,15.63,100.0,"AWS, Docker, FastAPI, Git, Python, SQL",
+2,Machine Learning High Match,85.0,65.53,-19.47,19.47,31.05,100.0,"Docker, Git, Machine Learning, NumPy, Python, pandas, scikit-learn",
+3,Frontend React High Match,90.0,56.38,-33.62,33.62,12.77,100.0,"CSS, Git, HTML, JavaScript, React",
+4,Fullstack Python Medium-High Match,70.0,44.74,-25.26,25.26,14.49,75.0,"CSS, Django, Docker, HTML, JavaScript, Python","AWS, React"
+5,Data Analyst Medium Match,62.0,46.11,-15.89,15.89,12.21,80.0,"Excel, Python, SQL, pandas",Power BI
+6,Cloud DevOps Medium Match,68.0,56.64,-11.36,11.36,13.29,100.0,"AWS, Docker, Git, Python",
+7,Java to Frontend Low Match,22.0,1.52,-20.48,20.48,3.05,0.0,,"CSS, HTML, JavaScript, React"
+8,Mobile to ML Low Match,15.0,0.0,-15.0,15.0,0.0,0.0,,"Docker, Machine Learning, NumPy, Python, pandas, scikit-learn"
+9,Finance to Tech Low Match,10.0,0.7,-9.3,9.3,1.41,0.0,,"AWS, Docker, FastAPI, Python, SQL"
+10,QA Automation Medium-High Match,80.0,58.59,-21.41,21.41,17.19,100.0,"Docker, Git, Python, SQL",
+11,Customer Support to Fullstack Edge Case,8.0,0.0,-8.0,8.0,0.0,0.0,,"CSS, Django, Docker, HTML, JavaScript, Python, React"
+12,Generic Job Description Edge Case,30.0,1.37,-28.63,28.63,2.74,0.0,,

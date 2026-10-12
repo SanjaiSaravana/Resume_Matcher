@@ -1,0 +1,19 @@
+MLflow Experiment Run Report: Experiment A (Unigrams, Weight 0.4)
+==================================================
+
+Configuration:
+- N-gram Range: (1, 1)
+- Skill Weight: 0.4
+- Dataset Version: synthetic_v1.0
+- Random Seed: 42
+
+Metrics:
+- MAE: 19.4467
+- Spearman_Rank_Correlation: 0.8757
+- num_samples: 12
+- mean_predicted_score: 32.89
+- mean_text_similarity: 18.43
+- mean_skill_coverage: 54.58
+
+Summary:
+The run evaluated 12 synthetic resume-job pairs. Average prediction error was 19.4467 points with a Spearman rank correlation of 0.8757 against synthetic ground truth.

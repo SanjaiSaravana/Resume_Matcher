@@ -1,0 +1,12 @@
+{
+  "run_name": "Experiment C (Unigrams+Bigrams, Weight 0.5)",
+  "experiment_name": "Resume-Job-Description-Matcher",
+  "ngram_range": [
+    1,
+    2
+  ],
+  "skill_weight": 0.5,
+  "stop_words": "english",
+  "dataset_version": "synthetic_v1.0",
+  "random_seed": 42
+}

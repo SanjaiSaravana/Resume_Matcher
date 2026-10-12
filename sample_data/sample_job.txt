@@ -1,0 +1,28 @@
+Role: Senior Python & Machine Learning Engineer
+Location: Remote (US) / New York, NY
+Company: InnovateTech AI Solutions
+
+About the Role:
+We are seeking a talented Senior Python Engineer with a strong interest in Machine Learning to join our core intelligence team. In this role, you will architect resilient backend services, productionize machine learning workflows, and collaborate on cloud-native deployments.
+
+Key Responsibilities:
+- Design, build, and optimize scalable RESTful backend services using Python and FastAPI.
+- Develop predictive and machine learning pipelines using scikit-learn, pandas, and NumPy.
+- Containerize services with Docker and manage automated deployments on AWS.
+- Design relational schemas and optimize database performance using SQL (PostgreSQL).
+- Collaborate with frontend and mobile teams, practicing code reviews and Git version control.
+- Ensure high test coverage and reliability with automated testing suites.
+
+Required Qualifications & Skills:
+- 3+ years of professional experience with Python software engineering.
+- Hands-on experience building backend APIs with FastAPI, Flask, or Django.
+- Proficiency in data manipulation and model building with pandas, NumPy, and scikit-learn.
+- Strong knowledge of Machine Learning concepts and algorithmic problem solving.
+- Practical experience with Docker containerization and AWS cloud services.
+- Solid understanding of SQL database querying and optimization.
+- Familiarity with version control using Git.
+
+Preferred Qualifications:
+- Experience with frontend technologies such as React or JavaScript.
+- Familiarity with data visualization tools such as Power BI or Excel dashboards.
+- Bachelor's degree in Computer Science, Engineering, or equivalent practical experience.
