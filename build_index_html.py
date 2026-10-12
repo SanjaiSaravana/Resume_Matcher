@@ -567,7 +567,7 @@ def evaluate_match_json(pdf_b64, raw_text, job_desc, skill_weight):
 
     results = match_resume_to_job(
         resume_text=resume_text,
-        job_description=job_desc.strip(),
+        job_text=job_desc.strip(),
         skill_weight=float(skill_weight),
         ngram_range=(1, 2),
     )

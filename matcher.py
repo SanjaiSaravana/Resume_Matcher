@@ -323,21 +323,21 @@ def generate_suggestions(
 
 def match_resume_to_job(
     resume_text: str,
-    job_text: str,
+    job_text: str = "",
     skill_weight: float = 0.4,
     ngram_range: tuple[int, int] = (1, 1),
     skill_list: Sequence[str] | None = None,
+    job_description: str | None = None,
 ) -> dict[str, Any]:
     """
     Complete end-to-end matching pipeline between a resume and a job description.
 
     Args:
         resume_text: Extracted text from resume.
-        job_text: Raw job description text.
+        job_text: Raw job description text (or pass via job_description).
         skill_weight: Importance of skill coverage relative to text similarity (0.0 to 1.0).
         ngram_range: TF-IDF n-gram range (e.g., (1, 1) or (1, 2)).
         skill_list: Configurable list of skills to recognize.
-
     Returns:
         dict containing:
         - final_score: float (0.0 - 100.0)
@@ -350,6 +350,8 @@ def match_resume_to_job(
         - suggestions: list[str]
         - disclaimer: str
     """
+    if job_description is not None:
+        job_text = job_description
     # Input validation
     if not isinstance(resume_text, str) or not resume_text.strip():
         raise ValueError("Resume text is empty or invalid.")
